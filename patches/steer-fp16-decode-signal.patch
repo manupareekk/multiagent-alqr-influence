@@ -1,0 +1,271 @@
+diff --git a/steer/data_handling.py b/steer/data_handling.py
+index 1c4af41..b491919 100644
+--- a/steer/data_handling.py
++++ b/steer/data_handling.py
+@@ -132,7 +132,7 @@ class ContrastiveBuilder:
+         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+         # print(f"inputs: {inputs}")
+         input_ids = inputs["input_ids"]
+-        attention_mask = inputs["attention_mask"].float()
++        attention_mask = inputs["attention_mask"]
+         embedding_layer = self.model.get_input_embeddings()
+         hidden_states = embedding_layer(input_ids)
+         self.X = th.zeros_like(hidden_states).repeat(self.T+1, 1, 1).to(self.device)
+@@ -177,7 +177,7 @@ class ContrastiveBuilder:
+             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+             # print(f"inputs: {inputs}")
+             input_ids = inputs["input_ids"]
+-            attention_mask = inputs["attention_mask"].float()
++            attention_mask = inputs["attention_mask"]
+             embedding_layer = self.model.get_input_embeddings()
+             hidden_states = embedding_layer(input_ids)
+             self.X = th.zeros_like(hidden_states).repeat(self.T+1, 1, 1).to(self.device)
+@@ -242,7 +242,7 @@ class ContrastiveBuilder:
+             input_ids = inputs["input_ids"]
+             B,L = input_ids.shape
+             # print(f"B,L: {B,L}")
+-            attention_mask = inputs["attention_mask"].float()
++            attention_mask = inputs["attention_mask"]
+             embedding_layer = self.model.get_input_embeddings()
+             hidden_states = embedding_layer(input_ids)
+             self.X = th.zeros(self.T+1, B, L, hidden_states.size(-1), device=self.device)
+@@ -292,7 +292,7 @@ class ContrastiveBuilder:
+             input_ids = inputs["input_ids"]
+             B,L = input_ids.shape
+             # print(f"B,L: {B,L}")
+-            attention_mask = inputs["attention_mask"].float()
++            attention_mask = inputs["attention_mask"]
+             embedding_layer = self.model.get_input_embeddings()
+             hidden_states = embedding_layer(input_ids)
+             self.X = th.zeros(self.T+1, B, L, hidden_states.size(-1), device=self.device)
+@@ -326,7 +326,7 @@ class ContrastiveBuilder:
+ 
+             # print(f"inputs: {inputs}")
+             input_ids = inputs["input_ids"]
+-            attention_mask = inputs["attention_mask"].float()
++            attention_mask = inputs["attention_mask"]
+             embedding_layer = self.model.get_input_embeddings()
+             hidden_states = embedding_layer(input_ids)
+             self.X = th.zeros_like(hidden_states).repeat(self.T+1, 1, 1).to(self.device)
+@@ -382,7 +382,7 @@ class ContrastiveBuilder:
+ 
+             # print(f"inputs: {inputs}")
+             input_ids = inputs["input_ids"]
+-            attention_mask = inputs["attention_mask"].float()
++            attention_mask = inputs["attention_mask"]
+             embedding_layer = self.model.get_input_embeddings()
+             hidden_states = embedding_layer(input_ids)
+             self.X = th.zeros_like(hidden_states).repeat(self.T+1, 1, 1).to(self.device)
+@@ -484,7 +484,7 @@ class ContrastiveBuilder:
+ 
+             # print(f"inputs: {inputs}")
+             input_ids = inputs["input_ids"]
+-            attention_mask = inputs["attention_mask"].float()
++            attention_mask = inputs["attention_mask"]
+             embedding_layer = self.model.get_input_embeddings()
+             hidden_states = embedding_layer(input_ids)
+             self.X = th.zeros_like(hidden_states).repeat(self.T+1, 1, 1).to(self.device)
+@@ -586,7 +586,7 @@ class ContrastiveBuilder:
+         self.e_sum = th.zeros((input_ids.shape[0], target_acts[0].shape[0]), device=self.device)
+         self.e_prev = th.zeros((input_ids.shape[0], target_acts[0].shape[0]), device=self.device)
+ 
+-        attention_mask = inputs["attention_mask"].float()
++        attention_mask = inputs["attention_mask"]
+         embedding_layer = self.model.get_input_embeddings()
+         hidden_states = embedding_layer(input_ids)
+         self.X = th.zeros(self.T+1, B, L, hidden_states.size(-1), device=self.device)
+@@ -745,7 +745,7 @@ class ContrastiveBuilder:
+             input_ids = inputs["input_ids"]
+             B,L = input_ids.shape
+             # print(f"B,L: {B,L}")
+-            attention_mask = inputs["attention_mask"].float()
++            attention_mask = inputs["attention_mask"]
+             embedding_layer = self.model.get_input_embeddings()
+             hidden_states = embedding_layer(input_ids)
+             self.X = th.zeros(self.T+1, B, L, hidden_states.size(-1), device=self.device)
+diff --git a/steer/lqr_utils.py b/steer/lqr_utils.py
+index 891f625..ceb737a 100644
+--- a/steer/lqr_utils.py
++++ b/steer/lqr_utils.py
+@@ -57,8 +57,8 @@ def linearize(tfs, T, m, X_nom):
+             return tfs[t](x,u)[..., -1, :]
+ 
+         # Compute Jacobians:
+-        Jx = th.autograd.functional.jacobian(lambda x_: f_last(x_, u), x, create_graph=False, vectorize=True)   # shape: [n, *x.shape]
+-        # Ju = th.autograd.functional.jacobian(lambda u_: f_last(x, u_), u, create_graph=False, vectorize=True)   # shape: [n, *u.shape]
++        Jx = th.autograd.functional.jacobian(lambda x_: f_last(x_, u), x, create_graph=False, vectorize=False)   # shape: [n, *x.shape]
++        # Ju = th.autograd.functional.jacobian(lambda u_: f_last(x, u_), u, create_graph=False, vectorize=False)   # shape: [n, *u.shape]
+         A[t] = Jx[...,-1,:]
+         # B[t] = Ju
+ 
+@@ -253,6 +253,29 @@ def find_random_target(model, x0):
+     return x
+ 
+ 
++def expand_attention_mask_4d(attention_mask, dtype, device=None):
++    """HF Gemma2/4.57 expects a 4D additive mask (B,1,S,S), not a 2D pad mask."""
++    if attention_mask is None:
++        return None
++    if attention_mask.dim() == 4:
++        return attention_mask.to(dtype=dtype)
++    if attention_mask.dim() != 2:
++        return attention_mask
++    device = device or attention_mask.device
++    bsz, seq_len = attention_mask.shape
++    min_val = th.finfo(dtype).min
++    causal = th.zeros((seq_len, seq_len), device=device, dtype=dtype)
++    causal = causal.masked_fill(
++        th.triu(th.ones(seq_len, seq_len, device=device, dtype=th.bool), diagonal=1),
++        min_val,
++    )
++    mask = causal[None, None, :, :].expand(bsz, 1, seq_len, seq_len).clone()
++    pad = attention_mask.to(device) == 0
++    mask = mask.masked_fill(pad[:, None, None, :], min_val)
++    return mask
++
++
+ def tf_block_wrapper(block, attention_mask, position_ids, position_embeddings, x): # 4.57
+     x = x.unsqueeze(0)
+-    return block(x, attention_mask=attention_mask, position_ids=position_ids, position_embeddings=position_embeddings)[0]
+\ No newline at end of file
++    mask = expand_attention_mask_4d(attention_mask, dtype=x.dtype, device=x.device)
++    return block(x, attention_mask=mask, position_ids=position_ids, position_embeddings=position_embeddings)[0]
+\ No newline at end of file
+diff --git a/steer/steering.py b/steer/steering.py
+index 05c9c74..e3e2640 100644
+--- a/steer/steering.py
++++ b/steer/steering.py
+@@ -198,8 +198,10 @@ class LQRSteering:
+             x = input[0]
+             self.X[layer_idx] = x[-1,-1,:]
+             if self.setpoint_type == "linear":
+-                v = self.E_unit[layer_idx]
+-                b_mat = self.betas[layer_idx] * th.ones([x.shape[0], x.shape[1]], device=self.device)
++                v = self.E_unit[layer_idx].to(device=x.device, dtype=x.dtype)
++                b_mat = self.betas[layer_idx] * th.ones(
++                    [x.shape[0], x.shape[1]], device=x.device, dtype=x.dtype
++                )
+                 probe_mat = x @ v.T
+                 alpha = b_mat - probe_mat
+                 v_mat = v.expand(x.shape[0], x.shape[1], -1)
+@@ -209,7 +211,7 @@ class LQRSteering:
+             else:
+                 raise ValueError("Unsupported setpoint type")
+ 
+-            u_t = e @ self.K[layer_idx].T
++            u_t = e @ self.K[layer_idx].to(device=x.device, dtype=x.dtype).T
+             
+             self.U[layer_idx] = u_t[-1,-1]
+ 
+@@ -224,14 +226,24 @@ class LQRSteering:
+             self.X[layer_idx] = x[-1,:]
+ 
+             if self.setpoint_type == "linear":
+-                v = self.E_unit[layer_idx]
+-                alpha = th.tensor([self.betas[layer_idx] for i in range(x.shape[0])], device=self.device) - th.bmm(v.unsqueeze(0).unsqueeze(0), th.transpose(x.unsqueeze(0),-2,-1))
++                v = self.E_unit[layer_idx].to(device=x.device, dtype=x.dtype)
++                alpha = th.tensor(
++                    [self.betas[layer_idx] for i in range(x.shape[0])],
++                    device=x.device,
++                    dtype=x.dtype,
++                ) - th.bmm(
++                    v.unsqueeze(0).unsqueeze(0),
++                    th.transpose(x.unsqueeze(0), -2, -1),
++                )
+                 e = alpha.squeeze(0).T @ v.unsqueeze(0)
+             elif self.setpoint_type == "angular":
+                 e = self.get_angular_sp(x, layer_idx) - x
+             else:
+                 raise ValueError("Unsupported setpoint type")
+-            u_t = th.bmm(self.K[layer_idx].unsqueeze(0), th.transpose(e.unsqueeze(0),-2,-1)).squeeze(0).T
++            u_t = th.bmm(
++                self.K[layer_idx].unsqueeze(0).to(device=x.device, dtype=x.dtype),
++                th.transpose(e.unsqueeze(0), -2, -1),
++            ).squeeze(0).T
+             self.U[layer_idx] = u_t[-1]
+ 
+             if isinstance(output,tuple):
+@@ -299,9 +311,9 @@ class LQRSteering:
+ 
+     def hook_get_sp_signal(self, layer_idx, module, input, output):
+         x = input[0][:,-1,:]
+-        v = self.E_unit[layer_idx]
++        v = self.E_unit[layer_idx].to(device=x.device, dtype=x.dtype)
+         raw_signal = th.bmm(v.unsqueeze(0).unsqueeze(0), th.transpose(x.unsqueeze(0),-2,-1))
+-        nm = th.norm(self.E[layer_idx])
++        nm = th.norm(self.E[layer_idx].to(dtype=x.dtype))
+         signal = raw_signal
+         self.setpoint_signals.append(th.mean(signal).item())
+ 
+@@ -311,14 +323,21 @@ class LQRSteering:
+             else: 
+                 x = output[...,-1,:]
+             if self.mode != None:
+-                alpha = th.tensor([self.betas[layer_idx] for i in range(x.shape[0])], device=self.device) - th.bmm(v.unsqueeze(0).unsqueeze(0), th.transpose(x.unsqueeze(0),-2,-1))
++                alpha = th.tensor(
++                    [self.betas[layer_idx] for i in range(x.shape[0])],
++                    device=x.device,
++                    dtype=x.dtype,
++                ) - th.bmm(v.unsqueeze(0).unsqueeze(0), th.transpose(x.unsqueeze(0),-2,-1))
+                 e = alpha.squeeze(0).T @ v.unsqueeze(0)
+-                u_t = th.bmm(self.K[layer_idx].unsqueeze(0), th.transpose(e.unsqueeze(0),-2,-1)).squeeze(0).T
++                u_t = th.bmm(
++                    self.K[layer_idx].unsqueeze(0).to(device=x.device, dtype=x.dtype),
++                    th.transpose(e.unsqueeze(0), -2, -1),
++                ).squeeze(0).T
+                 x = x + u_t
+                 
+-            v = self.E_unit[0]
++            v = self.E_unit[0].to(device=x.device, dtype=x.dtype)
+             raw_signal = th.bmm(v.unsqueeze(0).unsqueeze(0), th.transpose(x.unsqueeze(0),-2,-1))
+-            nm = th.norm(self.E[layer_idx+1])
++            nm = th.norm(self.E[layer_idx+1].to(dtype=x.dtype))
+             signal = raw_signal / nm
+             self.setpoint_signals.append(th.mean(signal).item())
+         return output
+@@ -435,6 +454,15 @@ class LQRSteering:
+                 self.E_unit[i] = e / nrm
+                 self.betas[i] = lmbda * nrm
+ 
++        # Match fp16/bf16 activations (Kaggle Gemma etc.)
++        model_dtype = next(self.model.parameters()).dtype
++        self.E = self.E.to(dtype=model_dtype)
++        self.E_unit = self.E_unit.to(dtype=model_dtype)
++        if self.K is not None:
++            self.K = self.K.to(dtype=model_dtype)
++        # Signal hooks are optional diagnostics; skip to avoid dtype footguns in eval.
++        self.SIGNAL_COLLECT = False
++
+         with self:
+             output = self.model.generate(
+                 input_ids=input_ids,
+@@ -452,7 +480,10 @@ class LQRSteering:
+ 
+         if return_tokens:
+             return output.sequences
+-        output_str = self.tokenizer.batch_decode(output.sequences, skip_special_tokens=True)
++        # Decode only newly generated tokens (critical for chat templates).
++        prompt_len = input_ids.shape[-1]
++        new_tokens = output.sequences[:, prompt_len:]
++        output_str = self.tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
+         self.ALL_TOKENS = False
+         return output_str
+         
+@@ -553,7 +584,7 @@ class LQRSteering:
+ 
+         nom_inputs = self.tokenizer(nom_prompt, return_tensors="pt").to(self.device)
+         nom_input_ids = nom_inputs["input_ids"]
+-        nom_attention_mask = nom_inputs["attention_mask"].float()
++        nom_attention_mask = nom_inputs["attention_mask"]
+ 
+         embedding_layer = self.model.get_input_embeddings()
+         hidden_states = embedding_layer(nom_input_ids)
+@@ -702,7 +733,7 @@ class LQRSteering:
+         
+         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+         input_ids = inputs["input_ids"]
+-        attention_mask = inputs["attention_mask"].float()
++        attention_mask = inputs["attention_mask"]
+         embedding_layer = self.model.get_input_embeddings()
+         hidden_states = embedding_layer(input_ids)
+         self.X = [th.zeros_like(hidden_states).repeat(self.T+1, 1, 1).to(self.device)]

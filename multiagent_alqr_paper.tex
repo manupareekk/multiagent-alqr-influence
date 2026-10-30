@@ -1,0 +1,156 @@
+\documentclass[10pt, twocolumn, a4paper]{article}
+
+\usepackage[margin=0.65in]{geometry}
+\usepackage{amsmath, amssymb, amsfonts}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{microtype}
+\usepackage{abstract}
+\usepackage{cite}
+\usepackage{array}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+\renewcommand{\abstractnamefont}{\normalfont\bfseries}
+\renewcommand{\abstracttextfont}{\normalfont\small}
+
+\title{\LARGE \bfseries Linear Steering Fails to Calibrate Peer Influence: Evaluating A-LQR Control in a Two-Agent Resist/Accept Task}
+
+\author{
+    Manu Pareek\\
+    Georgia Institute of Technology\\
+    \texttt{mpareek3@gatech.edu}
+}
+
+\date{\today}
+
+\begin{document}
+
+\makeatletter
+\twocolumn[
+  \begin{@twocolumnfalse}
+    \maketitle
+    \begin{abstract}
+    Closed-loop representation control methods such as Activation Linear Quadratic Regulator (A-LQR) steering have shown success modulating single-agent behavioral traits (e.g., toxicity, truthfulness, refusal) \cite{skifstad2026alqr}. Whether such control can calibrate \emph{social} susceptibility---resisting bad peer pressure while accepting good corrections---is untested. We built a two-agent resist/accept harness on TruthfulQA MC1 with \texttt{gemma-2-2b-it} and extracted contrastive A-LQR steering vectors for the resist and accept objectives \cite{pareek2026multiagent}. Unsteered, the agent exhibits acute overinfluence: it answers most resist items correctly alone yet retains the correct answer after an assertive wrong peer in only 1/10 cases. Critically, A-LQR steering never improves resistance across $\lambda \in {[0.5, 12.0]}$---mild gains leave resistance unchanged, moderate gains eliminate it, and high gains collapse decoding entirely. On a pilot sweep, steering on several items moved the agent \emph{toward} the incorrect peer. We conclude that peer compliance is not a linearly steerable direction in this regime: the coupling between instruction-following and social deference resists single-direction control, and calibrated influence likely requires non-linear or gated interventions.
+    \end{abstract}
+    \vspace{0.8em}
+  \end{@twocolumnfalse}
+]
+\makeatother
+
+\section{Introduction \& Motivation}
+Representation-engineering methods allow direct intervention on a Large Language Model's (LLM) internal activations at generation time without modifying weights \cite{skifstad2026alqr}. A-LQR steering in particular models hidden-state dynamics as a discrete-time linear system and computes closed-loop feedback toward target representations derived from contrastive prompt pairs \cite{skifstad2026alqr}.
+
+Single-agent steering has proven effective for scalar behavioral traits---sentiment, toxicity, refusal. Multi-agent interaction introduces a harder target: \emph{calibrated} social influence, where an agent must condition its compliance on the correctness of the peer rather than the assertiveness of the message \cite{pareek2026multiagent}:
+\begin{itemize}
+    \item \textbf{Overinfluence / Sycophancy}: Agent B abandons correct knowledge to agree with a confident, incorrect peer (Agent A).
+    \item \textbf{Underinfluence / Resistance Failure}: Agent B rejects valid corrections from Agent A and persists in error.
+\end{itemize}
+
+The central question: \textit{can contrastive activation steering decouple an agent's compliance behavior from the correctness of what it is complying with?} If peer deference were a separable linear direction, A-LQR should reduce overinfluence while preserving receptivity to good corrections. Our results indicate it is not.
+
+\section{Experimental Setup \& Methodology}
+We established a two-agent simulation environment \cite{pareek2026multiagent}:
+
+\subsection{Agent Architecture \& Stack}
+\begin{itemize}
+    \item \textbf{Target Agent (Agent B)}: \texttt{google/gemma-2-2b-it} via HuggingFace, instruction-tuned, official chat templates \cite{gemma2024}.
+    \item \textbf{Peer Agent (Agent A)}: A scripted peer delivering assertive feedback to Agent B.
+    \item \textbf{Task}: TruthfulQA MC1, exact-letter scoring \cite{lin2021truthfulqa}. Constraining evaluation to exact-letter selection removes judge noise from open-ended generation.
+\end{itemize}
+
+\subsection{Behavioral Objectives}
+\begin{enumerate}
+    \item \textbf{Resist}: Agent B answers correctly alone. Agent A asserts a wrong choice (e.g., \textit{``I'm sure it's C. Reply with only: C''}). Success = B keeps its correct answer.
+    \item \textbf{Accept}: Agent A asserts the correct choice. Success = B outputs it.
+\end{enumerate}
+Both conditions are scored identically (correct letter after the peer message), isolating \emph{who suggested} the answer rather than \emph{what} the answer is.
+
+\subsection{Contrastive Sets \& A-LQR Vector Extraction}
+Steering directions and Jacobian matrices were computed across target layers to form control setpoints:
+\begin{equation}
+\Delta X_{\text{resist}} = \mathrm{acts}(\mathrm{resist}) - \mathrm{acts}(\mathrm{defer})
+\end{equation}
+\begin{equation}
+\Delta X_{\text{accept}} = \mathrm{acts}(\mathrm{accept}) - \mathrm{acts}(\mathrm{ignore})
+\end{equation}
+Contrastive sets held the question and peer message fixed while varying Agent B's instruction (e.g., \textit{``only use A if correct''} vs.\ \textit{``always agree with A''}). Pickles were rebuilt with matched chat templates after earlier plain-text extractions introduced noise. A-LQR control was applied to B strictly \textbf{after} processing A's message.
+
+\subsection{Influence Measurement}
+Beyond binary resist/accept counts, the harness records a continuous influence score per item: the shift in B's output toward A's position after exposure to the peer, i.e.\ $\mathrm{sim}(B_{\mathrm{after}}, A) - \mathrm{sim}(B_{\mathrm{alone}}, A)$ \cite{pareek2026multiagent}.
+
+\section{Empirical Results}
+
+\subsection{Baseline: Overinfluence Is Real, Not Ignorance}
+The strongest evidence that this is a social-compliance failure rather than a capability gap is the alone-vs-peer gap on resist items (Table~\ref{tab:main}): Agent B produced the correct letter on the majority of resist items when answering alone, yet after the assertive wrong peer retained the correct answer in only \textbf{1/10} cases. On accept items, the peer was followed in \textbf{9/10} cases---baseline compliance is near-ceiling in both directions.
+
+\subsection{Steering Sweeps}
+Table~\ref{tab:main} summarizes the main sweep on TruthfulQA MC1 (10 resist + 10 accept items per condition):
+
+\begin{table*}[t]
+\centering
+\caption{Resist/Accept performance on TruthfulQA MC1 across conditions ($n=10$ per objective)}
+\label{tab:main}
+\vspace{0.5em}
+\begin{tabular}{lcccp{5.6cm}}
+\toprule
+\textbf{Condition} & \textbf{All} & \textbf{Resist} & \textbf{Accept} & \textbf{Generation quality} \\
+\midrule
+Alone (no peer, unsteered) & --- & $\sim$6/10 & --- & Pre-peer capability is mostly intact \\
+Peer, unsteered (baseline) & 10/20 & 1/10 & 9/10 & Fluent; acute overinfluence \\
+A-LQR $\lambda \in {[0.5, 1.5]}$ & 11/20 & 1/10 & 10/10 & Fluent; no resistance gain \\
+A-LQR $\lambda \in {[2.0, 5.0]}$ & 10/20 & 0/10 & 10/10 & Letter spam (``C C C\ldots''); zero resistance \\
+A-LQR $\lambda \in {[8.0, 12.0]}$ & 0/20 & 0/10 & 0/10 & Severe decoding collapse \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsection{Ablation Across Pilot Datasets}
+The pattern replicated across earlier pilots before the matched TQA-MC rebuild \cite{pareek2026multiagent}:
+\begin{itemize}
+    \item \textbf{Handmade pilot ($n=20$, $\lambda=1.25$)}: overall accuracy $14/20 \to 11/20$; resist $6/11 \to 3/11$; accept unchanged $8/9 \to 8/9$. Notably, on several resist items steering \emph{increased} movement toward the incorrect peer---the push landed on the wrong side of the compliance direction.
+    \item \textbf{No-Country sweep ($n=18$)}: resist declined monotonically with gain, from $5/10$ at baseline to $0/10$ at $\lambda=2.0$; accept held near baseline until degradation set in.
+\end{itemize}
+
+\section{Discussion \& Key Findings}
+\begin{enumerate}
+    \item \textbf{Compliance is not a linearly steerable direction.} Contrastive vectors cleanly shift single-agent traits, but peer-induced deference appears entangled with instruction-following and the token distribution itself. Steering toward ``resist'' did not selectively reduce overinfluence---on several items it increased deference to the wrong peer.
+    \item \textbf{Degradation horizon precedes any benefit.} Increasing $\lambda$ never produced a regime of improved resistance. Because A-LQR scales setpoint strength as $\beta = \lambda \times \|E\|$ per layer, large gains warp hidden states off the natural generation manifold (letter spam at $\lambda \geq 2$; full collapse at $\lambda \geq 8$) before influencing social behavior.
+    \item \textbf{Asymmetric headroom.} Accept is already near-ceiling at baseline (9/10), so nearly all measurable harm concentrates on resist---where steering was consistently neutral-to-negative. The $\lambda$ knob is ruled out across 0.5--12; this is a method limitation, not a tuning gap.
+    \item \textbf{Template matching matters.} Mismatches between plain-text pickles and chat-template evaluation introduced noise; matched templates stabilized extraction but did not change the qualitative outcome.
+\end{enumerate}
+
+\section{Limitations \& Future Directions}
+\begin{itemize}
+    \item \textbf{Scale}: $n=20$ per condition on one 2B-parameter model with a single seed limits statistical strength; the consistent replication across three dataset/model variants mitigates but does not eliminate this.
+    \item \textbf{Scripted peer}: A was a static assertive template. Softer or multi-turn peers, and a live (unscripted) Agent A, remain unevaluated---deliberately, until steered resist beats baseline.
+    \item \textbf{Missing prompt baseline}: A prompt-engineering control (e.g., ``ignore the peer if unsure'') was identified but not yet run; it would establish whether the failure is specific to activation-level methods.
+    \item \textbf{Future methods}: Gated or nonlinear control (steering conditioned on detected sycophancy), richer influence pickles, and multi-agent SFT are natural successors on the same harness.
+\end{itemize}
+
+\section*{Acknowledgments}
+This work was carried out as part of a research project with the Trustworthy Robotics Lab at the Georgia Institute of Technology and builds directly on the lab's A-LQR activation-steering framework \cite{skifstad2026alqr}. The author thanks the lab's graduate researchers for mentorship and infrastructure support.
+
+\begin{thebibliography}{99}
+
+\bibitem{skifstad2026alqr}
+A. Skifstad et al., ``Closed-Loop Control of Language Model Activation States via Linear Quadratic Regulation (A-LQR),'' \textit{arXiv preprint arXiv:2604.19018}, 2026.
+
+\bibitem{lin2021truthfulqa}
+S. Lin, J. Hilton, and O. Evans, ``TruthfulQA: Measuring How Models Mimic Human Falsehoods,'' \textit{arXiv preprint arXiv:2109.07958}, 2021.
+
+\bibitem{gemma2024}
+Gemma Team, ``Gemma 2: Improving Open Language Models via Two-Stage Knowledge Distillation,'' \textit{Google DeepMind Technical Report}, 2024.
+
+\bibitem{pareek2026multiagent}
+M. Pareek, ``Multi-Agent Calibrated Influence with A-LQR: Resist/Accept Peer Pressure on TruthfulQA-MC,'' \textit{GitHub Repository}, 2026. \url{https://github.com/manupareekk/multiagent-alqr-influence}
+
+\end{thebibliography}
+
+\end{document}
